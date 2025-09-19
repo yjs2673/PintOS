@@ -88,7 +88,35 @@ start_process (void *file_name_)
 int
 process_wait (tid_t child_tid UNUSED) 
 {
-  return -1;
+  struct thread *cur = thread_current ();
+  struct list_elem *e;
+  struct thread *child = NULL;
+  int status = -1;
+
+  /* 1) child_tid가 진짜 내 자식인지 찾기 */
+  for (e = list_begin (&(cur->child_list));
+       e != list_end (&(cur->child_list));
+       e = list_next (e))
+  {
+    struct thread *t = list_entry (e, struct thread, child_elem);
+    if (t->tid == child_tid)
+    {
+      child = t;
+      /* 2) 자식 종료까지 대기: 자식은 process_exit()에서 sema_up(lock_child) */
+      sema_down (&child->lock_child);
+
+      /* 3) 자식의 종료 상태 수집 */
+      status = child->exit_status;
+      list_remove (e); /* 더 이상 children 리스트에 남겨둘 필요 없음 */
+  
+      /* 4) 수집 완료 알림: 자식이 완전히 정리될 수 있게 깨워줌 */
+      sema_up (&child->lock_parent);
+
+      return status;
+    }
+  }
+
+  return status;
 }
 
 /* Free the current process's resources. */
