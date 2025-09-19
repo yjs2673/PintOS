@@ -12,14 +12,9 @@
 
 typedef int pid_t;
 
-/* === devices/*.h 없이 쓰기 위한 전방 선언들 === */
-/* devices/shutdown.h */
-void shutdown_power_off (void);
-/* devices/input.h */
-uint8_t input_getc (void);
-/* lib/kernel/console.h (또는 devices/console.h에서 제공) */
-void putbuf (const char *buffer, size_t n);
-/* ============================================= */
+void shutdown_power_off (void);             /* devices/shutdown.h */
+uint8_t input_getc (void);                  /* devices/input.h */
+void putbuf (const char *buffer, size_t n); /* lib/kernel/console.h */
 
 static void syscall_handler (struct intr_frame *);
 
@@ -77,7 +72,7 @@ validate_cstr (const char *str)
 }
 
 /* syscall function */
-
+/*============================================*/
 static void sys_halt (void)
 {
   shutdown_power_off ();
@@ -134,6 +129,33 @@ static int sys_write (int fd, const void *buffer, unsigned size)
   return -1;
 }
 
+static int sys_fibonacci (int n)
+{
+  if (n < 0 || n > 46) return -1;   /* 범위 밖은 예외처리 */
+
+  int pprev = 0, prev = 1, cur = 0;
+  if (n == 0) return pprev;
+  if (n == 1) return prev;
+
+  for (int i = 1; i < n; i++)
+  {
+    cur = prev + pprev;
+    pprev = prev;
+    prev = cur;
+  }
+
+  return cur;
+}
+
+static int sys_max_of_four_int (int a, int b, int c, int d)
+{
+  if (a >= b && a >= c && a >= d) return a;
+  else if (b >= c && b >= d) return b;
+  else if (c >= d) return c;
+  else return d;
+}
+/*============================================*/
+
 void
 syscall_init (void) 
 {
@@ -151,15 +173,18 @@ syscall_handler (struct intr_frame *f UNUSED)
 
   int32_t arg0 = 0, arg1 = 0, arg2 = 0;
   if (sysno == SYS_EXIT || sysno == SYS_EXEC || sysno == SYS_WAIT ||
-      sysno == SYS_READ || sysno == SYS_WRITE || sysno == SYS_HALT)
+      sysno == SYS_READ || sysno == SYS_WRITE || sysno == SYS_HALT ||
+      sysno == SYS_FIBONACCI || sysno = SYS_MAX_OF_FOUR_INT)
     {
-      if (sysno != SYS_HALT)
+      if (sysno != SYS_HALT)                        // 1 arg
         arg0 = get_user_int ((uint8_t *) esp + 4);
-      if (sysno == SYS_EXEC || sysno == SYS_WAIT ||
+      if (sysno == SYS_EXEC || sysno == SYS_WAIT || // 2 arg
           sysno == SYS_READ || sysno == SYS_WRITE)
         arg1 = get_user_int ((uint8_t *) esp + 8);
-      if (sysno == SYS_READ || sysno == SYS_WRITE)
+      if (sysno == SYS_READ || sysno == SYS_WRITE)  // 3 arg
         arg2 = get_user_int ((uint8_t *) esp + 12);
+      if (sysno == SYS_FIBONACCI)                   // 4 arg
+        arg3 = get_user_int ((uint8_t *) esp + 16);
     }
 
   switch (sysno)
@@ -188,9 +213,16 @@ syscall_handler (struct intr_frame *f UNUSED)
     f->eax = (uint32_t) sys_write (arg0, (const void *) arg1, (unsigned) arg2);
     break;
 
+  case SYS_FIBONACCI:
+    f->eax = (uint32_t) sys_fibonacci (arg0);
+    break;
+
+  case SYS_MAX_OF_FOUR_INT:
+    f->eax = (uint32_t) sys_max_of_four_int (arg0, arg1, arg2, arg3);
+    break;
+
   default:
-    /* 알 수 없는 시스템 콜은 강제 종료 */
-    sys_exit (-1);
+    sys_exit (-1); /* 알 수 없는 시스템 콜은 강제 종료 */
     break;
   }
 }
