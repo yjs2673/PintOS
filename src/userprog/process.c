@@ -38,8 +38,23 @@ process_execute (const char *file_name)
     return TID_ERROR;
   strlcpy (fn_copy, file_name, PGSIZE);
 
+  /* arg[0]만 가져와서 thread 돌리기 */
+  char process_name[128];
+  int idx = 0;
+  while (1)
+  {
+    if (file_name[idx] == ' ')
+    {
+      process_name[idx] = '\0';
+      break;
+    }
+    process_name[idx] = file_name[idx];
+    idx++;
+  }
+  if(filesys_open(process_name) == NULL) return TID_ERROR;
+
   /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
+  tid = thread_create (process_name, PRI_DEFAULT, start_process, fn_copy);
   if (tid == TID_ERROR)
     palloc_free_page (fn_copy); 
   return tid;
@@ -88,7 +103,35 @@ start_process (void *file_name_)
 int
 process_wait (tid_t child_tid UNUSED) 
 {
-  return -1;
+  struct thread *cur = thread_current ();
+  struct list_elem *e;
+  struct thread *child = NULL;
+  int status = -1;
+
+  /* 1) child_tid가 진짜 내 자식인지 찾기 */
+  for (e = list_begin (&(cur->child_list));
+       e != list_end (&(cur->child_list));
+       e = list_next (e))
+  {
+    struct thread *t = list_entry (e, struct thread, child_elem);
+    if (t->tid == child_tid)
+    {
+      child = t;
+      /* 2) 자식 종료까지 대기: 자식은 process_exit()에서 sema_up(lock_child) */
+      sema_down (&child->lock_child);
+
+      /* 3) 자식의 종료 상태 수집 */
+      status = child->exit_status;
+      list_remove (e); /* 더 이상 children 리스트에 남겨둘 필요 없음 */
+  
+      /* 4) 수집 완료 알림: 자식이 완전히 정리될 수 있게 깨워줌 */
+      sema_up (&child->lock_parent);
+
+      return status;
+    }
+  }
+
+  return status;
 }
 
 /* Free the current process's resources. */
@@ -114,6 +157,9 @@ process_exit (void)
       pagedir_activate (NULL);
       pagedir_destroy (pd);
     }
+    /* semaphore 관리 -> deadlock 방지 */
+    sema_up(&(cur->lock_child));
+    sema_down(&(cur->lock_parent));
 }
 
 /* Sets up the CPU for running user code in the current
@@ -221,8 +267,33 @@ load (const char *file_name, void (**eip) (void), void **esp)
     goto done;
   process_activate ();
 
+  /* 1.Parsing */
+  int argc = 0, length = 0;
+  char* argv[128];
+  const char *s = file_name;                  // 원본을 건드리지 않음
+  size_t n = strlen(s);
+
+  size_t start = 0;
+  for (size_t i = 0; i <= n; i++) 
+  {
+    bool is_sep = (i == n) || (s[i] == ' ');
+    if (is_sep) 
+    {
+      if (i > start) 
+      {
+        if (argc >= 128) break;                // 안전장치
+        size_t len = i - start;
+        argv[argc] = malloc(len + 1);
+        memcpy(argv[argc], s + start, len);
+        argv[argc][len] = '\0';
+        argc++;
+      }
+      start = i + 1;                           // 다음 토큰 시작
+    }
+  }
+
   /* Open executable file. */
-  file = filesys_open (file_name);
+  file = filesys_open (argv[0]);
   if (file == NULL) 
     {
       printf ("load: %s: open failed\n", file_name);
@@ -304,6 +375,48 @@ load (const char *file_name, void (**eip) (void), void **esp)
   /* Set up stack. */
   if (!setup_stack (esp))
     goto done;
+
+  /* Allocate stack. */
+  /*=======================================================*/
+  /* 2.Store to stack reverse */
+  char* argv_ptr[128];
+  for(int i = 0; i < argc; i++)
+  {
+    *esp -= strlen(argv[argc - i - 1]) + 1;                           // 스택에서 공간 할당
+    argv_ptr[argc - i - 1] = *esp;
+    memcpy(*esp, argv[argc - i - 1], strlen(argv[argc - i - 1]) + 1); // 스택에 문자열 복사
+  }
+
+  /* 3.Word align */
+  uintptr_t mis = (uintptr_t)(*esp) & 3;  // esp % 4
+  if (mis) 
+  {
+    size_t pad = 4 - mis;
+    *esp -= pad;
+    memset(*esp, 0, pad);                 // 패딩은 0으로
+  }
+  
+  /* 4.Push from stack reverse */
+  *esp -= 4;      // NULL pointer
+  *(char **)(*esp) = NULL;
+  
+  for(int i = 0; i < argc; i++)
+  { 
+    *esp -= 4;
+    *(char **)(*esp) = (char*)argv_ptr[argc - i - 1]; //문자열 스택 주소 복사
+  }
+  
+  char **argv_start = *esp; // argv
+  *esp -= 4;
+  *(char ***)(*esp) = argv_start;
+
+  *esp -= 4;      // argc
+  *(int *)(*esp) = argc;
+
+  /* 5.Return fake address */
+  *esp -= 4;
+  *(void **)(*esp) = NULL;
+  /*=======================================================*/
 
   /* Start address. */
   *eip = (void (*) (void)) ehdr.e_entry;
