@@ -61,6 +61,33 @@
           retval;                                               \
         })
 
+/* additional for max of four int */
+#define syscall3(NUMBER, ARG0, ARG1, ARG2, ARG3)                \
+        ({                                                      \
+          int retval;                                           \
+          asm volatile                                          \
+            ("pushl %[arg3]; pushl %[arg2]; pushl %[arg1]; pushl %[arg0]; "    \
+             "pushl %[number]; int $0x30; addl $20, %%esp"      \
+               : "=a" (retval)                                  \
+               : [number] "i" (NUMBER),                         \
+                 [arg0] "r" (ARG0),                             \
+                 [arg1] "r" (ARG1),                             \
+                 [arg2] "r" (ARG2)                              \
+                 [arg3] "r" (ARG3)                              \
+               : "memory");                                     \
+          retval;                                               \
+        })
+
+int fibonacci (int n) 
+{
+  return syscall1 (SYS_FIBONACCI, n);
+}
+
+int max_of_four_int (int a, int b, int c, int d)
+{
+  return syscall4 (SYS_MAX_OF_FOUR_INT, a, b, c, d);
+}
+
 void
 halt (void) 
 {
