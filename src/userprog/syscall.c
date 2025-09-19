@@ -73,12 +73,12 @@ validate_cstr (const char *str)
 
 /* syscall function */
 /*============================================*/
-static void sys_halt (void)
+void sys_halt (void)
 {
   shutdown_power_off ();
 }
 
-static void sys_exit (int status)
+void sys_exit (int status)
 {
   struct thread *t = thread_current ();
   t->exit_status = status;
@@ -86,7 +86,7 @@ static void sys_exit (int status)
   thread_exit ();
 }
 
-static pid_t sys_exec (const char *cmd_line)
+pid_t sys_exec (const char *cmd_line)
 {
   validate_cstr (cmd_line);
   lock_acquire (&filesys_lock);
@@ -95,12 +95,12 @@ static pid_t sys_exec (const char *cmd_line)
   return pid;
 }
 
-static int sys_wait (pid_t pid)
+int sys_wait (pid_t pid)
 {
   return process_wait (pid);
 }
 
-static int sys_read (int fd, void *buffer, unsigned size)
+int sys_read (int fd, void *buffer, unsigned size)
 {
   if (size == 0) return 0;
   validate_writable_buffer (buffer, size);
@@ -115,7 +115,7 @@ static int sys_read (int fd, void *buffer, unsigned size)
   return -1;
 }
 
-static int sys_write (int fd, const void *buffer, unsigned size)
+int sys_write (int fd, const void *buffer, unsigned size)
 {
   if (size == 0) return 0;
   validate_readable_buffer (buffer, size);
@@ -129,7 +129,7 @@ static int sys_write (int fd, const void *buffer, unsigned size)
   return -1;
 }
 
-static int sys_fibonacci (int n)
+int sys_fibonacci (int n)
 {
   if (n < 0 || n > 46) return -1;   /* 범위 밖은 예외처리 */
 
@@ -147,12 +147,11 @@ static int sys_fibonacci (int n)
   return cur;
 }
 
-static int sys_max_of_four_int (int a, int b, int c, int d)
+int sys_max_of_four_int (int a, int b, int c, int d)
 {
-  if (a >= b && a >= c && a >= d) return a;
-  else if (b >= c && b >= d) return b;
-  else if (c >= d) return c;
-  else return d;
+  int max1 = a >= b ? a : b;
+  int max2 = c >= d ? c : d;
+  return max1 >= max2 ? max1 : max2;
 }
 /*============================================*/
 
@@ -183,7 +182,7 @@ syscall_handler (struct intr_frame *f UNUSED)
         arg1 = get_user_int ((uint8_t *) esp + 8);
       if (sysno == SYS_READ || sysno == SYS_WRITE)  // 3 arg
         arg2 = get_user_int ((uint8_t *) esp + 12);
-      if (sysno == SYS_FIBONACCI)                   // 4 arg
+      if (sysno == SYS_MAX_OF_FOUR_INT)             // 4 arg
         arg3 = get_user_int ((uint8_t *) esp + 16);
     }
 
