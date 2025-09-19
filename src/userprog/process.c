@@ -114,6 +114,9 @@ process_exit (void)
       pagedir_activate (NULL);
       pagedir_destroy (pd);
     }
+    /* semaphore 관리 -> deadlock 방지 */
+    sema_up(&(cur->lock_child));
+    sema_down(&(cur->lock_parent));
 }
 
 /* Sets up the CPU for running user code in the current
@@ -304,6 +307,8 @@ load (const char *file_name, void (**eip) (void), void **esp)
   /* Set up stack. */
   if (!setup_stack (esp))
     goto done;
+
+  /* Allocate stack. */
 
   /* Start address. */
   *eip = (void (*) (void)) ehdr.e_entry;
