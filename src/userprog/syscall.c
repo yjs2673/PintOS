@@ -171,10 +171,10 @@ syscall_handler (struct intr_frame *f UNUSED)
   validate_ptr (esp);
   int sysno = get_user_int (esp);
 
-  int32_t arg0 = 0, arg1 = 0, arg2 = 0;
+  int32_t arg0 = 0, arg1 = 0, arg2 = 0, arg3 = 0;
   if (sysno == SYS_EXIT || sysno == SYS_EXEC || sysno == SYS_WAIT ||
       sysno == SYS_READ || sysno == SYS_WRITE || sysno == SYS_HALT ||
-      sysno == SYS_FIBONACCI || sysno = SYS_MAX_OF_FOUR_INT)
+      sysno == SYS_FIBONACCI || sysno == SYS_MAX_OF_FOUR_INT)
     {
       if (sysno != SYS_HALT)                        // 1 arg
         arg0 = get_user_int ((uint8_t *) esp + 4);
