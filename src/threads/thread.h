@@ -101,8 +101,8 @@ struct thread
     struct list child_list;             /* 자식 스레드 리스트 */
     struct list_elem child_elem;        /* 자식 스레드 원소 */
     int exit_status;                    /* 종료 상태 */
-    struct semaphore child_lock;        /* 자식 프로세스용 */
-    struct semaphore parent_lock;       /* 부모 프로세스용 */
+    struct semaphore lock_child;        /* 자식 프로세스용 */
+    struct semaphore lock_parent;       /* 부모 프로세스용 */
 #endif
 
     /* Owned by thread.c. */
