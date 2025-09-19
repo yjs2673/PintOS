@@ -1,15 +1,25 @@
 #include "userprog/syscall.h"
 #include <stdio.h>
+#include <stdint.h>
+#include <stddef.h>
 #include <syscall-nr.h>
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 #include "userprog/pagedir.h"
-#include "devices/shutdown.h"
-#include "devices/input.h"
-#include "devices/console.h"
 #include "userprog/process.h"
 #include "threads/synch.h"
+
+typedef int pid_t;
+
+/* === devices/*.h 없이 쓰기 위한 전방 선언들 === */
+/* devices/shutdown.h */
+void shutdown_power_off (void);
+/* devices/input.h */
+uint8_t input_getc (void);
+/* lib/kernel/console.h (또는 devices/console.h에서 제공) */
+void putbuf (const char *buffer, size_t n);
+/* ============================================= */
 
 static void syscall_handler (struct intr_frame *);
 
@@ -24,7 +34,6 @@ validate_ptr (const void *uaddr)
   if (uaddr == NULL || !is_user_vaddr (uaddr) ||
       pagedir_get_page (thread_current ()->pagedir, uaddr) == NULL)
     {
-      /* 잘못된 포인터: 프로세스 종료 */
       printf ("%s: exit(%d)\n", thread_current ()->name, -1);
       thread_current ()->exit_status = -1;
       thread_exit ();
@@ -43,8 +52,7 @@ get_user_int (const void *uaddr)
 static void
 validate_writable_buffer (void *buf, unsigned size)
 {
-  unsigned i;
-  for (i = 0; i < size; i++)
+  for (unsigned i = 0; i < size; i++)
     validate_ptr ((uint8_t *) buf + i);
 }
 
@@ -52,8 +60,7 @@ validate_writable_buffer (void *buf, unsigned size)
 static void
 validate_readable_buffer (const void *buf, unsigned size)
 {
-  unsigned i;
-  for (i = 0; i < size; i++)
+  for (unsigned i = 0; i < size; i++)
     validate_ptr ((const uint8_t *) buf + i);
 }
 
@@ -105,8 +112,7 @@ static int sys_read (int fd, void *buffer, unsigned size)
 
   if (fd == 0) /* STDIN */
     {
-      unsigned i;
-      for (i = 0; i < size; i++)
+      for (unsigned i = 0; i < size; i++)
         ((uint8_t *) buffer)[i] = input_getc ();
       return (int) size;
     }
@@ -138,17 +144,11 @@ syscall_init (void)
 static void
 syscall_handler (struct intr_frame *f UNUSED) 
 {
-  // printf ("system call!\n");
-  // thread_exit ();
-
-  /* 유저 스택 포인터 */
   void *esp = f->esp;
 
-  /* 시스템 콜 번호 */
   validate_ptr (esp);
   int sysno = get_user_int (esp);
 
-  /* 인자 간격은 4바이트 */
   int32_t arg0 = 0, arg1 = 0, arg2 = 0;
   if (sysno == SYS_EXIT || sysno == SYS_EXEC || sysno == SYS_WAIT ||
       sysno == SYS_READ || sysno == SYS_WRITE || sysno == SYS_HALT)
@@ -165,7 +165,7 @@ syscall_handler (struct intr_frame *f UNUSED)
   switch (sysno)
   {
   case SYS_HALT:
-    sys_halt (); /* 복귀하지 않음 */
+    sys_halt ();
     break;
 
   case SYS_EXIT:
@@ -189,8 +189,8 @@ syscall_handler (struct intr_frame *f UNUSED)
     break;
 
   default:
-    /* 알 수 없는 시스템 콜은 종료 */
-    exit (-1);
+    /* 알 수 없는 시스템 콜은 강제 종료 */
+    sys_exit (-1);
     break;
   }
 }
