@@ -38,8 +38,22 @@ process_execute (const char *file_name)
     return TID_ERROR;
   strlcpy (fn_copy, file_name, PGSIZE);
 
+  /* arg[0]만 가져와서 thread 돌리기 */
+  char process_name[128];
+  int idx = 0;
+  while (1)
+  {
+    if (file_name[idx] == ' ')
+    {
+      process_name[idx] = '\0';
+      break;
+    }
+    process_name[idx] = file_name[idx];
+    idx++;
+  }
+
   /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
+  tid = thread_create (process_name, PRI_DEFAULT, start_process, fn_copy);
   if (tid == TID_ERROR)
     palloc_free_page (fn_copy); 
   return tid;
