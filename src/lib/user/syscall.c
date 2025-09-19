@@ -62,7 +62,7 @@
         })
 
 /* additional for max of four int */
-#define syscall3(NUMBER, ARG0, ARG1, ARG2, ARG3)                \
+#define syscall4(NUMBER, ARG0, ARG1, ARG2, ARG3)                \
         ({                                                      \
           int retval;                                           \
           asm volatile                                          \
