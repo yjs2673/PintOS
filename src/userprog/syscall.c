@@ -39,20 +39,8 @@ validate_ptr (const void *uaddr)
 static int32_t
 get_user_int (const void *uaddr)
 {
-  const uint8_t *p = uaddr;
-  for (size_t i = 0; i < sizeof(int32_t); i++)
-    validate_ptr(p + i);              // 4바이트 모두 검증
-  int32_t val;
-  memcpy(&val, uaddr, sizeof val);    // 정렬 문제 회피
-  return val;
-}
-
-
-void fetch_args(void *esp, int n, int32_t *out) 
-{
-  for (int i = 0; i < n; i++) {
-    out[i] = get_user_int ((uint8_t *)esp + 4 + i * 4);
-  }
+  validate_ptr (uaddr);
+  return *(const int32_t *) uaddr;
 }
 
 /* 쓰기 가능한 버퍼 검증. size 바이트 범위를 모두 확인. */
@@ -182,42 +170,58 @@ syscall_handler (struct intr_frame *f UNUSED)
   validate_ptr (esp);
   int sysno = get_user_int (esp);
 
-  int32_t args[4] = {0};
+  int32_t arg0 = 0, arg1 = 0, arg2 = 0, arg3 = 0;
+  if (sysno == SYS_EXIT || sysno == SYS_EXEC || sysno == SYS_WAIT ||
+      sysno == SYS_READ || sysno == SYS_WRITE || sysno == SYS_HALT ||
+      sysno == SYS_FIBONACCI || sysno == SYS_MAX_OF_FOUR_INT)
+    {
+      if (sysno != SYS_HALT)                        
+        arg0 = get_user_int ((uint8_t *) esp + 4);  // 1 arg
+      if (sysno == SYS_EXEC || sysno == SYS_WAIT || 
+          sysno == SYS_READ || sysno == SYS_WRITE || sysno == SYS_MAX_OF_FOUR_INT)
+        arg1 = get_user_int ((uint8_t *) esp + 8);  // 2 arg
+      if (sysno == SYS_READ || sysno == SYS_WRITE || sysno == SYS_MAX_OF_FOUR_INT)  
+        arg2 = get_user_int ((uint8_t *) esp + 12); // 3 arg
+      if (sysno == SYS_MAX_OF_FOUR_INT)             
+        arg3 = get_user_int ((uint8_t *) esp + 16); // 4 arg
+    }
 
-  switch (sysno) {
+  switch (sysno)
+  {
   case SYS_HALT:
     sys_halt ();
     break;
-  case SYS_EXIT:
-    fetch_args(esp, 1, args);
-    sys_exit (args[0]);
-    break;
-  case SYS_EXEC:
-    fetch_args(esp, 1, args);
-    f->eax = (uint32_t) sys_exec ((const char *) args[0]);
-    break;
-  case SYS_WAIT:
-    fetch_args(esp, 1, args);
-    f->eax = (uint32_t) sys_wait ((pid_t) args[0]);
-    break;
-  case SYS_READ:
-    fetch_args(esp, 3, args);
-    f->eax = (uint32_t) sys_read (args[0], (void *) args[1], (unsigned) args[2]);
-    break;
-  case SYS_WRITE:
-    fetch_args(esp, 3, args);
-    f->eax = (uint32_t) sys_write (args[0], (const void *) args[1], (unsigned) args[2]);
-    break;
-  case SYS_FIBONACCI:
-    fetch_args(esp, 1, args);
-    f->eax = (uint32_t) sys_fibonacci (args[0]);
-    break;
-  case SYS_MAX_OF_FOUR_INT:
-    fetch_args(esp, 4, args);
-    f->eax = (uint32_t) sys_max_of_four_int (args[0], args[1], args[2], args[3]);
-    break;
-  default:
-    sys_exit(-1);
-}
 
+  case SYS_EXIT:
+    sys_exit (arg0);
+    break;
+
+  case SYS_EXEC:
+    f->eax = (uint32_t) sys_exec ((const char *) arg0);
+    break;
+
+  case SYS_WAIT:
+    f->eax = (uint32_t) sys_wait ((pid_t) arg0);
+    break;
+
+  case SYS_READ:
+    f->eax = (uint32_t) sys_read (arg0, (void *) arg1, (unsigned) arg2);
+    break;
+
+  case SYS_WRITE:
+    f->eax = (uint32_t) sys_write (arg0, (const void *) arg1, (unsigned) arg2);
+    break;
+
+  case SYS_FIBONACCI:
+    f->eax = (uint32_t) sys_fibonacci (arg0);
+    break;
+
+  case SYS_MAX_OF_FOUR_INT:
+    f->eax = (uint32_t) sys_max_of_four_int (arg0, arg1, arg2, arg3);
+    break;
+
+  default:
+    sys_exit (-1); /* 알 수 없는 시스템 콜은 강제 종료 */
+    break;
+  }
 }
