@@ -106,6 +106,7 @@ struct thread
     /* User Program 2 */
     struct semaphore lock_load;         /* 멀티 스레드용*/
     struct file* fd[128];               /* file descriptor */
+    int fd_next;
 #endif
 
     /* Owned by thread.c. */
