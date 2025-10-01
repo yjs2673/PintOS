@@ -470,6 +470,7 @@ init_thread (struct thread *t, const char *name, int priority)
 
 /* User Program 1 */
 #ifdef USERPROG
+  sema_init(&(t->lock_load), 0);
   sema_init(&(t->lock_child), 0);
   sema_init(&(t->lock_parent), 0);
   list_init(&t->child_list);
