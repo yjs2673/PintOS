@@ -319,17 +319,17 @@ syscall_handler (struct intr_frame *f UNUSED)
       sysno == SYS_OPEN || sysno == SYS_FILESIZE || sysno == SYS_SEEK ||
       sysno == SYS_READ || sysno == SYS_WRITE || sysno == SYS_TELL ||
       sysno == SYS_CLOSE || sysno == SYS_FIBONACCI || sysno == SYS_MAX_OF_FOUR_INT)
-    {
-      if (sysno != SYS_HALT)                        
-        arg0 = get_user_int ((uint8_t *) esp + 4);  // 1 arg
-      if (sysno == SYS_READ || sysno == SYS_WRITE || sysno == SYS_MAX_OF_FOUR_INT ||
-      sysno == SYS_CREATE || sysno == SYS_SEEK)
-        arg1 = get_user_int ((uint8_t *) esp + 8);  // 2 arg
-      if (sysno == SYS_READ || sysno == SYS_WRITE || sysno == SYS_MAX_OF_FOUR_INT)  
-        arg2 = get_user_int ((uint8_t *) esp + 12); // 3 arg
-      if (sysno == SYS_MAX_OF_FOUR_INT)             
-        arg3 = get_user_int ((uint8_t *) esp + 16); // 4 arg
-    }
+  {
+    if (sysno != SYS_HALT)                
+      arg0 = get_user_int ((uint8_t *) esp + 4);  // 1 arg
+    if (sysno == SYS_READ || sysno == SYS_WRITE || sysno == SYS_MAX_OF_FOUR_INT ||
+        sysno == SYS_CREATE || sysno == SYS_SEEK)
+      arg1 = get_user_int ((uint8_t *) esp + 8);  // 2 arg
+    if (sysno == SYS_READ || sysno == SYS_WRITE || sysno == SYS_MAX_OF_FOUR_INT)  
+      arg2 = get_user_int ((uint8_t *) esp + 12); // 3 arg
+    if (sysno == SYS_MAX_OF_FOUR_INT)             
+      arg3 = get_user_int ((uint8_t *) esp + 16); // 4 arg
+  }
 
   switch (sysno)
   {
