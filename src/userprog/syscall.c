@@ -114,22 +114,6 @@ int sys_wait (pid_t pid)
   return process_wait (pid);
 }
 
-int sys_read (int fd, void *buffer, unsigned size)
-{
-  if (size == 0) return 0;
-  validate_writable_buffer (buffer, size);
-
-  if (fd == 0) /* STDIN */
-  {
-    for (unsigned i = 0; i < size; i++)
-      ((uint8_t *) buffer)[i] = input_getc ();
-    return (int) size;
-  }
-  /* 파일 디스크립터 테이블 확장 전: 그 외 FD는 미지원 */
-  return -1;
-}
-
-/* NEW: sys_create 구현 */
 bool sys_create (const char *file, unsigned initial_size)
 {
   validate_cstr (file);
@@ -139,7 +123,6 @@ bool sys_create (const char *file, unsigned initial_size)
   return success;
 }
 
-/* NEW: sys_remove 구현 */
 bool sys_remove (const char *file)
 {
   validate_cstr (file);
@@ -149,7 +132,6 @@ bool sys_remove (const char *file)
   return success;
 }
 
-/* NEW: sys_open 구현 */
 int sys_open (const char *file)
 {
   validate_cstr (file);
@@ -268,7 +250,7 @@ void sys_close (int fd)
   
   lock_acquire (&filesys_lock);
   file_close (f);
-  thread_current ()->fd_table[fd] = NULL; /* fd 테이블에서 제거 */
+  thread_current ()->fd[fd] = NULL; /* fd 테이블에서 제거 */
   lock_release (&filesys_lock);
 }
 
@@ -350,7 +332,7 @@ syscall_handler (struct intr_frame *f UNUSED)
     break;
 
   case SYS_CREATE:
-    f->eax = (uint32_t) sys_read ((const char *) arg0, (unsigned) arg1);
+    f->eax = (uint32_t) sys_create ((const char *) arg0, (unsigned) arg1);
     break;
 
   case SYS_REMOVE:
@@ -362,7 +344,7 @@ syscall_handler (struct intr_frame *f UNUSED)
     break;
 
   case SYS_FILESIZE:
-    f->eax = (uint32_t) sys_open (arg0);
+    f->eax = (uint32_t) sys_filesize (arg0);
     break;
 
   case SYS_READ:
@@ -374,7 +356,7 @@ syscall_handler (struct intr_frame *f UNUSED)
     break;
 
   case SYS_SEEK:
-    f->eax = (uint32_t) sys_read (arg0, (unsigned) arg1);
+    sys_seek (arg0, (unsigned) arg1);
     break;
 
   case SYS_TELL:
@@ -382,7 +364,7 @@ syscall_handler (struct intr_frame *f UNUSED)
     break;
 
   case SYS_CLOSE:
-    f->eax = (uint32_t) sys_close (arg0);
+    sys_close (arg0);
     break;
 
   case SYS_FIBONACCI:
