@@ -9,8 +9,6 @@
 #include "userprog/pagedir.h"
 #include "userprog/process.h"
 #include "threads/synch.h"
-#include "filesys/filesys.h"
-#include "filesys/file.h"
 
 typedef int pid_t;
 
@@ -23,43 +21,41 @@ static void syscall_handler (struct intr_frame *);
 /* Filesystem serialization lock */
 static struct lock filesys_lock;
 
-/* uaddr가 유저 영역에 매핑되어 있는지 확인.
-   아니면 exit(-1)로 프로세스를 종료. */
+/* uaddr가 유저 영역에 매핑되어 있는지 확인 */
 static void
 validate_ptr (const void *uaddr)
 {
   if (uaddr == NULL || !is_user_vaddr (uaddr) ||
       pagedir_get_page (thread_current ()->pagedir, uaddr) == NULL)
     {
-      sys_exit (-1); /* 수정: 직접 thread_exit() 호출 대신 sys_exit() 사용 */
+      sys_exit (-1);
     }
 }
 
-/* 유저 메모리에서 32비트 값을 안전히 읽기. */
+/* 유저 메모리에서 32비트 값을 안전히 읽기 */
 static int32_t
 get_user_int (const void *uaddr)
 {
   validate_ptr (uaddr);
-  validate_ptr (uaddr + 3); /* 4바이트 경계 확인 */
+  // validate_ptr (uaddr + 3); /* 4바이트 패딩 */
   return *(const int32_t *) uaddr;
 }
 
-/* 쓰기 가능한 버퍼 검증. size 바이트 범위를 모두 확인. */
+/* size 바이트 범위를 모두 확인 */
+/* 쓰기 가능한 버퍼 검증 */
 static void
 validate_writable_buffer (void *buf, unsigned size)
 {
-  if (size == 0) return;
-  validate_ptr(buf);
-  validate_ptr((uint8_t *) buf + size - 1);
+  for (unsigned i = 0; i < size; i++)
+    validate_ptr ((uint8_t *) buf + i);
 }
 
 /* 읽기 전용 버퍼 검증. */
 static void
 validate_readable_buffer (const void *buf, unsigned size)
 {
-  if (size == 0) return;
-  validate_ptr(buf);
-  validate_ptr((const uint8_t *) buf + size - 1);
+  for (unsigned i = 0; i < size; i++)
+    validate_ptr ((const uint8_t *) buf + i);
 }
 
 /* NUL로 끝나는 문자열 전체를 검증. */
@@ -72,17 +68,6 @@ validate_cstr (const char *str)
       validate_ptr (str);
       str++;
     }
-}
-
-/* 파일 디스크립터로 파일 객체 찾기 */
-static struct file *
-get_file_from_fd (int fd)
-{
-  struct thread *t = thread_current ();
-  if (fd < 2 || fd >= t->fd_next) /* 0, 1은 예약됨, fd_next는 열린 파일 개수 + 2 */
-    return NULL;
-  
-  return t->fd[fd];
 }
 
 /* syscall function */
@@ -116,142 +101,47 @@ int sys_wait (pid_t pid)
 
 bool sys_create (const char *file, unsigned initial_size)
 {
-  validate_cstr (file);
-  lock_acquire (&filesys_lock);
-  bool success = filesys_create (file, initial_size);
-  lock_release (&filesys_lock);
-  return success;
+  
 }
 
 bool sys_remove (const char *file)
 {
-  validate_cstr (file);
-  lock_acquire (&filesys_lock);
-  bool success = filesys_remove (file);
-  lock_release (&filesys_lock);
-  return success;
+  
 }
 
 int sys_open (const char *file)
 {
-  validate_cstr (file);
-  lock_acquire (&filesys_lock);
-  struct file *f = filesys_open (file);
-  if (f == NULL)
-  {
-    lock_release (&filesys_lock);
-    return -1;
-  }
-
-  struct thread *t = thread_current ();
-  /* thread.h에 fd_table과 fd_next가 있어야 한다
-   * process_execute()에서 fd_table을 할당하고, fd_next를 2로 초기화
-   */
-  int fd = t->fd_next++;
-  t->fd[fd] = f;
   
-  lock_release (&filesys_lock);
-  return fd;
 }
 
 int sys_filesize (int fd)
 {
-  struct file *f = get_file_from_fd (fd);
-  if (f == NULL)
-    return -1;
-
-  lock_acquire (&filesys_lock);
-  int size = file_length (f);
-  lock_release (&filesys_lock);
-  return size;
+  
 }
 
 int sys_read (int fd, void *buffer, unsigned size)
 {
-  validate_writable_buffer (buffer, size);
-
-  if (fd == 0) /* STDIN */
-  {
-    for (unsigned i = 0; i < size; i++)
-      ((uint8_t *) buffer)[i] = input_getc ();
-    return (int) size;
-  }
-  else if (fd == 1) /* STDOUT - 읽기 불가 */
-  {
-    return -1;
-  }
-  else /* 파일 읽기 */
-  {
-    struct file *f = get_file_from_fd (fd);
-    if (f == NULL)
-      return -1;
-      
-    lock_acquire (&filesys_lock);
-    int bytes_read = file_read (f, buffer, size);
-    lock_release (&filesys_lock);
-    return bytes_read;
-  }
+  
 }
 
 int sys_write (int fd, const void *buffer, unsigned size)
 {
-  validate_readable_buffer (buffer, size);
-
-  if (fd == 1) /* STDOUT */
-  {
-    putbuf ((const char *) buffer, (size_t) size);
-    return (int) size;
-  }
-  else if (fd == 0) /* STDIN - 쓰기 불가 */
-  {
-    return -1;
-  }
-  else /* 파일 쓰기 */
-  {
-    struct file *f = get_file_from_fd (fd);
-    if (f == NULL)
-      return -1;
-      
-    lock_acquire (&filesys_lock);
-    int bytes_written = file_write (f, buffer, size);
-    lock_release (&filesys_lock);
-    return bytes_written;
-  }
+  
 }
 
 void sys_seek (int fd, unsigned position)
 {
-  struct file *f = get_file_from_fd (fd);
-  if (f == NULL)
-    return;
-
-  lock_acquire (&filesys_lock);
-  file_seek (f, position);
-  lock_release (&filesys_lock);
+  
 }
 
 unsigned sys_tell (int fd)
 {
-  struct file *f = get_file_from_fd (fd);
-  if (f == NULL)
-    return -1; /* 에러 값 반환 (API에 따라 다를 수 있음) */
   
-  lock_acquire (&filesys_lock);
-  unsigned position = file_tell (f);
-  lock_release (&filesys_lock);
-  return position;
 }
 
 void sys_close (int fd)
 {
-  struct file *f = get_file_from_fd (fd);
-  if (f == NULL)
-    return;
   
-  lock_acquire (&filesys_lock);
-  file_close (f);
-  thread_current ()->fd[fd] = NULL; /* fd 테이블에서 제거 */
-  lock_release (&filesys_lock);
 }
 
 int sys_fibonacci (int n)
