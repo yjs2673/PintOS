@@ -21,29 +21,28 @@ static void syscall_handler (struct intr_frame *);
 /* Filesystem serialization lock */
 static struct lock filesys_lock;
 
-/* uaddr가 유저 영역에 매핑되어 있는지 확인.
-   아니면 exit(-1)로 프로세스를 종료. */
+/* uaddr가 유저 영역에 매핑되어 있는지 확인 */
 static void
 validate_ptr (const void *uaddr)
 {
   if (uaddr == NULL || !is_user_vaddr (uaddr) ||
       pagedir_get_page (thread_current ()->pagedir, uaddr) == NULL)
     {
-      printf ("%s: exit(%d)\n", thread_current ()->name, -1);
-      thread_current ()->exit_status = -1;
-      thread_exit ();
+      sys_exit (-1);
     }
 }
 
-/* 유저 메모리에서 32비트 값을 안전히 읽기. */
+/* 유저 메모리에서 32비트 값을 안전히 읽기 */
 static int32_t
 get_user_int (const void *uaddr)
 {
   validate_ptr (uaddr);
+  // validate_ptr (uaddr + 3); /* 4바이트 패딩 */
   return *(const int32_t *) uaddr;
 }
 
-/* 쓰기 가능한 버퍼 검증. size 바이트 범위를 모두 확인. */
+/* size 바이트 범위를 모두 확인 */
+/* 쓰기 가능한 버퍼 검증 */
 static void
 validate_writable_buffer (void *buf, unsigned size)
 {
@@ -100,34 +99,199 @@ int sys_wait (pid_t pid)
   return process_wait (pid);
 }
 
+/* User Program 2 */
+bool sys_create (const char *file, unsigned initial_size)
+{
+  if (file == NULL) sys_exit(-1);
+  validate_cstr(file);
+  lock_acquire(&filesys_lock);
+  bool success = filesys_create(file, initial_size);
+  lock_release(&filesys_lock);
+  return success;
+}
+
+bool sys_remove (const char *file)
+{
+  if (file == NULL) sys_exit(-1);
+  validate_cstr(file);
+  lock_acquire(&filesys_lock);
+  bool success = filesys_remove(file);
+  lock_release(&filesys_lock);
+  return success;
+}
+
+int sys_open (const char *file)
+{
+  if (file == NULL) sys_exit(-1);
+  validate_cstr(file);
+  lock_acquire(&filesys_lock);
+  struct file *f = filesys_open(file);
+  if (f == NULL)
+  {
+    lock_release(&filesys_lock);
+    return -1;
+  }
+
+  struct thread *t = thread_current();
+  // Find an empty spot in the file descriptor table (start from 2, as 0 and 1 are reserved)
+  for (int i = 2; i < 128; i++)
+  {
+    if (t->fd[i] == NULL)
+    {
+      t->fd[i] = f;
+      lock_release(&filesys_lock);
+      return i;
+    }
+  }
+
+  // No available file descriptor
+  file_close(f);
+  lock_release(&filesys_lock);
+  return -1;
+}
+
+int sys_filesize (int fd)
+{
+  if (fd < 2 || fd >= 128) return -1;
+  
+  struct thread *t = thread_current();
+  struct file *f = t->fd[fd];
+
+  if (f == NULL) return -1;
+
+  lock_acquire(&filesys_lock);
+  int size = file_length(f);
+  lock_release(&filesys_lock);
+  return size;
+}
+
 int sys_read (int fd, void *buffer, unsigned size)
 {
-  if (size == 0) return 0;
-  validate_writable_buffer (buffer, size);
+  validate_writable_buffer(buffer, size);
+  lock_acquire(&filesys_lock);
 
-  if (fd == 0) /* STDIN */
+  // Read from STDIN (keyboard)
+  if (fd == 0)
+  {
+    for (unsigned i = 0; i < size; i++)
     {
-      for (unsigned i = 0; i < size; i++)
-        ((uint8_t *) buffer)[i] = input_getc ();
-      return (int) size;
+      ((uint8_t *)buffer)[i] = input_getc();
     }
-  /* 파일 디스크립터 테이블 확장 전: 그 외 FD는 미지원 */
-  return -1;
+    lock_release(&filesys_lock);
+    return size;
+  }
+  
+  // Cannot read from STDOUT
+  if (fd == 1)
+  {
+    lock_release(&filesys_lock);
+    return -1;
+  }
+
+  if (fd < 2 || fd >= 128)
+  {
+    lock_release(&filesys_lock);
+    return -1;
+  }
+  
+  struct thread *t = thread_current();
+  struct file *f = t->fd[fd];
+
+  if (f == NULL)
+  {
+    lock_release(&filesys_lock);
+    return -1;
+  }
+
+  int bytes_read = file_read(f, buffer, size);
+  lock_release(&filesys_lock);
+  return bytes_read;
 }
 
 int sys_write (int fd, const void *buffer, unsigned size)
 {
-  if (size == 0) return 0;
-  validate_readable_buffer (buffer, size);
+  validate_readable_buffer(buffer, size);
+  lock_acquire(&filesys_lock);
 
-  if (fd == 1) /* STDOUT */
-    {
-      putbuf ((const char *) buffer, (size_t) size);
-      return (int) size;
-    }
-  /* 파일 디스크립터 테이블 확장 전: 그 외 FD는 미지원 */
-  return -1;
+  // Write to STDOUT (console)
+  if (fd == 1)
+  {
+    putbuf(buffer, size);
+    lock_release(&filesys_lock);
+    return size;
+  }
+
+  // Cannot write to STDIN
+  if (fd == 0)
+  {
+    lock_release(&filesys_lock);
+    return -1;
+  }
+  
+  if (fd < 2 || fd >= 128)
+  {
+    lock_release(&filesys_lock);
+    return -1;
+  }
+
+  struct thread *t = thread_current();
+  struct file *f = t->fd[fd];
+
+  if (f == NULL)
+  {
+    lock_release(&filesys_lock);
+    return -1;
+  }
+
+  int bytes_written = file_write(f, buffer, size);
+  lock_release(&filesys_lock);
+  return bytes_written;
 }
+
+void sys_seek (int fd, unsigned position)
+{
+  if (fd < 2 || fd >= 128) return;
+  
+  struct thread *t = thread_current();
+  struct file *f = t->fd[fd];
+
+  if (f == NULL) return;
+
+  lock_acquire(&filesys_lock);
+  file_seek(f, position);
+  lock_release(&filesys_lock);
+}
+
+unsigned sys_tell (int fd)
+{
+  if (fd < 2 || fd >= 128) return 0;
+
+  struct thread *t = thread_current();
+  struct file *f = t->fd[fd];
+
+  if (f == NULL) return 0;
+
+  lock_acquire(&filesys_lock);
+  unsigned position = file_tell(f);
+  lock_release(&filesys_lock);
+  return position;
+}
+
+void sys_close (int fd)
+{
+  if (fd < 2 || fd >= 128) sys_exit(-1);
+
+  struct thread *t = thread_current();
+  struct file *f = t->fd[fd];
+
+  if (f == NULL) sys_exit(-1);
+
+  lock_acquire(&filesys_lock);
+  file_close(f);
+  t->fd[fd] = NULL; // Mark the file descriptor as available.
+  lock_release(&filesys_lock);
+}
+/*================*/
 
 int sys_fibonacci (int n)
 {
@@ -171,20 +335,22 @@ syscall_handler (struct intr_frame *f UNUSED)
   int sysno = get_user_int (esp);
 
   int32_t arg0 = 0, arg1 = 0, arg2 = 0, arg3 = 0;
-  if (sysno == SYS_EXIT || sysno == SYS_EXEC || sysno == SYS_WAIT ||
-      sysno == SYS_READ || sysno == SYS_WRITE || sysno == SYS_HALT ||
-      sysno == SYS_FIBONACCI || sysno == SYS_MAX_OF_FOUR_INT)
-    {
-      if (sysno != SYS_HALT)                        
-        arg0 = get_user_int ((uint8_t *) esp + 4);  // 1 arg
-      if (sysno == SYS_EXEC || sysno == SYS_WAIT || 
-          sysno == SYS_READ || sysno == SYS_WRITE || sysno == SYS_MAX_OF_FOUR_INT)
-        arg1 = get_user_int ((uint8_t *) esp + 8);  // 2 arg
-      if (sysno == SYS_READ || sysno == SYS_WRITE || sysno == SYS_MAX_OF_FOUR_INT)  
-        arg2 = get_user_int ((uint8_t *) esp + 12); // 3 arg
-      if (sysno == SYS_MAX_OF_FOUR_INT)             
-        arg3 = get_user_int ((uint8_t *) esp + 16); // 4 arg
-    }
+  if (sysno == SYS_HALT || sysno == SYS_EXIT || sysno == SYS_EXEC || 
+      sysno == SYS_WAIT || sysno == SYS_CREATE || sysno == SYS_REMOVE ||
+      sysno == SYS_OPEN || sysno == SYS_FILESIZE || sysno == SYS_SEEK ||
+      sysno == SYS_READ || sysno == SYS_WRITE || sysno == SYS_TELL ||
+      sysno == SYS_CLOSE || sysno == SYS_FIBONACCI || sysno == SYS_MAX_OF_FOUR_INT)
+  {
+    if (sysno != SYS_HALT)                
+      arg0 = get_user_int ((uint8_t *) esp + 4);  // 1 arg
+    if (sysno == SYS_READ || sysno == SYS_WRITE || sysno == SYS_MAX_OF_FOUR_INT ||
+        sysno == SYS_CREATE || sysno == SYS_SEEK)
+      arg1 = get_user_int ((uint8_t *) esp + 8);  // 2 arg
+    if (sysno == SYS_READ || sysno == SYS_WRITE || sysno == SYS_MAX_OF_FOUR_INT)  
+      arg2 = get_user_int ((uint8_t *) esp + 12); // 3 arg
+    if (sysno == SYS_MAX_OF_FOUR_INT)             
+      arg3 = get_user_int ((uint8_t *) esp + 16); // 4 arg
+  }
 
   switch (sysno)
   {
@@ -204,12 +370,40 @@ syscall_handler (struct intr_frame *f UNUSED)
     f->eax = (uint32_t) sys_wait ((pid_t) arg0);
     break;
 
+  case SYS_CREATE:
+    f->eax = (uint32_t) sys_create ((const char *) arg0, (unsigned) arg1);
+    break;
+
+  case SYS_REMOVE:
+    f->eax = (uint32_t) sys_remove ((const char *) arg0);
+    break;
+
+  case SYS_OPEN:
+    f->eax = (uint32_t) sys_open ((const char *) arg0);
+    break;
+
+  case SYS_FILESIZE:
+    f->eax = (uint32_t) sys_filesize (arg0);
+    break;
+
   case SYS_READ:
     f->eax = (uint32_t) sys_read (arg0, (void *) arg1, (unsigned) arg2);
     break;
 
   case SYS_WRITE:
     f->eax = (uint32_t) sys_write (arg0, (const void *) arg1, (unsigned) arg2);
+    break;
+
+  case SYS_SEEK:
+    sys_seek (arg0, (unsigned) arg1);
+    break;
+
+  case SYS_TELL:
+    f->eax = (uint32_t) sys_tell (arg0);
+    break;
+
+  case SYS_CLOSE:
+    sys_close (arg0);
     break;
 
   case SYS_FIBONACCI:
@@ -221,7 +415,7 @@ syscall_handler (struct intr_frame *f UNUSED)
     break;
 
   default:
-    sys_exit (-1); /* 알 수 없는 시스템 콜은 강제 종료 */
+    sys_exit (-1);
     break;
   }
 }

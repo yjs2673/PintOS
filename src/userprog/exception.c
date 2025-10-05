@@ -151,7 +151,7 @@ page_fault (struct intr_frame *f)
   user = (f->error_code & PF_U) != 0;
 
   /* vaddr가 kernel에 위치하는지 검사 */
-  // if (is_kernel_vaddr(fault_addr) || !user) exit(-1);
+  if (is_kernel_vaddr(fault_addr) || user == NULL || not_present) sys_exit(-1);
 
   /* To implement virtual memory, delete the rest of the function
      body, and replace it with code that brings in the page to
