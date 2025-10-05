@@ -102,47 +102,194 @@ int sys_wait (pid_t pid)
 /* User Program 2 */
 bool sys_create (const char *file, unsigned initial_size)
 {
-  
+  if (file == NULL) sys_exit(-1);
+  validate_cstr(file);
+  lock_acquire(&filesys_lock);
+  bool success = filesys_create(file, initial_size);
+  lock_release(&filesys_lock);
+  return success;
 }
 
 bool sys_remove (const char *file)
 {
-  
+  if (file == NULL) sys_exit(-1);
+  validate_cstr(file);
+  lock_acquire(&filesys_lock);
+  bool success = filesys_remove(file);
+  lock_release(&filesys_lock);
+  return success;
 }
 
 int sys_open (const char *file)
 {
-  
+  if (file == NULL) sys_exit(-1);
+  validate_cstr(file);
+  lock_acquire(&filesys_lock);
+  struct file *f = filesys_open(file);
+  if (f == NULL)
+  {
+    lock_release(&filesys_lock);
+    return -1;
+  }
+
+  struct thread *t = thread_current();
+  // Find an empty spot in the file descriptor table (start from 2, as 0 and 1 are reserved)
+  for (int i = 2; i < 128; i++)
+  {
+    if (t->fd[i] == NULL)
+    {
+      t->fd[i] = f;
+      lock_release(&filesys_lock);
+      return i;
+    }
+  }
+
+  // No available file descriptor
+  file_close(f);
+  lock_release(&filesys_lock);
+  return -1;
 }
 
 int sys_filesize (int fd)
 {
+  if (fd < 2 || fd >= 128) return -1;
   
+  struct thread *t = thread_current();
+  struct file *f = t->fd[fd];
+
+  if (f == NULL) return -1;
+
+  lock_acquire(&filesys_lock);
+  int size = file_length(f);
+  lock_release(&filesys_lock);
+  return size;
 }
 
 int sys_read (int fd, void *buffer, unsigned size)
 {
+  validate_writable_buffer(buffer, size);
+  lock_acquire(&filesys_lock);
+
+  // Read from STDIN (keyboard)
+  if (fd == 0)
+  {
+    for (unsigned i = 0; i < size; i++)
+    {
+      ((uint8_t *)buffer)[i] = input_getc();
+    }
+    lock_release(&filesys_lock);
+    return size;
+  }
   
+  // Cannot read from STDOUT
+  if (fd == 1)
+  {
+    lock_release(&filesys_lock);
+    return -1;
+  }
+
+  if (fd < 2 || fd >= 128)
+  {
+    lock_release(&filesys_lock);
+    return -1;
+  }
+  
+  struct thread *t = thread_current();
+  struct file *f = t->fd[fd];
+
+  if (f == NULL)
+  {
+    lock_release(&filesys_lock);
+    return -1;
+  }
+
+  int bytes_read = file_read(f, buffer, size);
+  lock_release(&filesys_lock);
+  return bytes_read;
 }
 
 int sys_write (int fd, const void *buffer, unsigned size)
 {
+  validate_readable_buffer(buffer, size);
+  lock_acquire(&filesys_lock);
+
+  // Write to STDOUT (console)
+  if (fd == 1)
+  {
+    putbuf(buffer, size);
+    lock_release(&filesys_lock);
+    return size;
+  }
+
+  // Cannot write to STDIN
+  if (fd == 0)
+  {
+    lock_release(&filesys_lock);
+    return -1;
+  }
   
+  if (fd < 2 || fd >= 128)
+  {
+    lock_release(&filesys_lock);
+    return -1;
+  }
+
+  struct thread *t = thread_current();
+  struct file *f = t->fd[fd];
+
+  if (f == NULL)
+  {
+    lock_release(&filesys_lock);
+    return -1;
+  }
+
+  int bytes_written = file_write(f, buffer, size);
+  lock_release(&filesys_lock);
+  return bytes_written;
 }
 
 void sys_seek (int fd, unsigned position)
 {
+  if (fd < 2 || fd >= 128) return;
   
+  struct thread *t = thread_current();
+  struct file *f = t->fd[fd];
+
+  if (f == NULL) return;
+
+  lock_acquire(&filesys_lock);
+  file_seek(f, position);
+  lock_release(&filesys_lock);
 }
 
 unsigned sys_tell (int fd)
 {
-  
+  if (fd < 2 || fd >= 128) return 0;
+
+  struct thread *t = thread_current();
+  struct file *f = t->fd[fd];
+
+  if (f == NULL) return 0;
+
+  lock_acquire(&filesys_lock);
+  unsigned position = file_tell(f);
+  lock_release(&filesys_lock);
+  return position;
 }
 
 void sys_close (int fd)
 {
-  
+  if (fd < 2 || fd >= 128) sys_exit(-1);
+
+  struct thread *t = thread_current();
+  struct file *f = t->fd[fd];
+
+  if (f == NULL) sys_exit(-1);
+
+  lock_acquire(&filesys_lock);
+  file_close(f);
+  t->fd[fd] = NULL; // Mark the file descriptor as available.
+  lock_release(&filesys_lock);
 }
 /*================*/
 
