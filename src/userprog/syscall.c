@@ -99,6 +99,7 @@ int sys_wait (pid_t pid)
   return process_wait (pid);
 }
 
+/* User Program 2 */
 bool sys_create (const char *file, unsigned initial_size)
 {
   
@@ -143,6 +144,7 @@ void sys_close (int fd)
 {
   
 }
+/*================*/
 
 int sys_fibonacci (int n)
 {
