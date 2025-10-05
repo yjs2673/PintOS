@@ -179,6 +179,9 @@ process_exit (void)
   struct thread *cur = thread_current ();
   uint32_t *pd;
 
+  for (int i = 2; i < 128; i++) if (cur->fd[i] != NULL) sys_close(i);
+
+  /* 실행 파일 닫고 쓰기를 허용 */
   if (cur->exec_file != NULL)
   {
     file_allow_write(cur->exec_file);
