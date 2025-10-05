@@ -104,9 +104,8 @@ struct thread
     struct semaphore lock_child;        /* 자식 프로세스용 */
     struct semaphore lock_parent;       /* 부모 프로세스용 */
     /* User Program 2 */
-    struct semaphore lock_load;         /* 멀티 스레드용*/
+    struct semaphore lock_load;         /* 멀티 스레드용 */
     struct file* fd[128];               /* file descriptor */
-    int fd_next;
 #endif
 
     /* Owned by thread.c. */
