@@ -107,6 +107,7 @@ struct thread
     struct semaphore lock_load;         /* 멀티 스레드용 */
     struct file* fd[128];               /* file descriptor */
     struct file* exec_file;             /* 현재 실행 중인 파일 포인터 */
+    bool load_success;                  /* 프로세스 로드 성공 여부 */
 #endif
 
     /* Owned by thread.c. */
