@@ -474,6 +474,7 @@ init_thread (struct thread *t, const char *name, int priority)
   sema_init(&(t->lock_child), 0);
   sema_init(&(t->lock_parent), 0);
   list_init(&t->child_list);
+  t->exec_file = NULL;
   list_push_back(&(running_thread()->child_list), &(t->child_elem));
 #endif
 }

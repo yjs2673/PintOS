@@ -106,6 +106,7 @@ struct thread
     /* User Program 2 */
     struct semaphore lock_load;         /* 멀티 스레드용 */
     struct file* fd[128];               /* file descriptor */
+    struct file* exec_file;             /* 현재 실행 중인 파일 포인터 */
 #endif
 
     /* Owned by thread.c. */
