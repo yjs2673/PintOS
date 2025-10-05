@@ -25,6 +25,21 @@ static bool load (const char *cmdline, void (**eip) (void), void **esp);
    FILENAME.  The new thread may be scheduled (and may even exit)
    before process_execute() returns.  Returns the new process's
    thread id, or TID_ERROR if the thread cannot be created. */
+
+/* 자식 스레드를 tid로 찾는 헬퍼 함수 */
+static struct thread* 
+get_child_process(tid_t tid) 
+{
+    struct thread *cur = thread_current();
+    struct list_elem *e;
+    for (e = list_begin(&cur->child_list); e != list_end(&cur->child_list); e = list_next(e)) 
+    {
+        struct thread *t = list_entry(e, struct thread, child_elem);
+        if (t->tid == tid) return t;
+    }
+    return NULL;
+}
+
 tid_t
 process_execute (const char *file_name) 
 {
@@ -55,8 +70,26 @@ process_execute (const char *file_name)
 
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (process_name, PRI_DEFAULT, start_process, fn_copy);
-  if (tid == TID_ERROR)
-    palloc_free_page (fn_copy); 
+  
+  if (tid == TID_ERROR) 
+  {
+    palloc_free_page (fn_copy);
+    return TID_ERROR;
+  }
+
+  /* 자식의 load가 끝날 때까지 대기 */
+  struct thread *child = get_child_process(tid);
+  if (child == NULL) return TID_ERROR;
+
+  sema_down(&child->lock_load);       // 자식이 신호를 줄 때까지 대기
+
+  /* 자식의 로드 성공 여부 확인 */
+  if (!child->load_success)
+  {
+    list_remove(&child->child_elem);  // 실패한 자식은 리스트에서 제거
+    return TID_ERROR;
+  }
+
   return tid;
 }
 
@@ -69,12 +102,17 @@ start_process (void *file_name_)
   struct intr_frame if_;
   bool success;
 
+  struct thread *cur = thread_current();
+
   /* Initialize interrupt frame and load executable. */
   memset (&if_, 0, sizeof if_);
   if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
   success = load (file_name, &if_.eip, &if_.esp);
+
+  cur->load_success = success;  // 자신의 load success 플래그 설정
+  sema_up(&cur->lock_load);     // 대기 중인 부모를 깨움
 
   /* If load failed, quit. */
   palloc_free_page (file_name);
@@ -434,6 +472,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
  done:
   /* We arrive here whether the load is successful or not. */
   // file_close (t->exec_file);
+  for (i = 0; i < argc; i++) free(argv[i]);
   return success;
 }
 
